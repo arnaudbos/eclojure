@@ -8,32 +8,37 @@
 #   terms of this license.
 #   You must not remove this notice, or any other, from this software.
 
-# Sets the path of two Clojure jars and the Criterium jar
-clojure="libraries/clojure-1.8.0.jar"
-eclojure="libraries/eclojure-1.8.0.jar"
-criterium="libraries/criterium-0.4.3.jar"
+stm_io="$root/target/stm.io-0.1.0-SNAPSHOT.jar"
+root=$(git rev-parse --show-toplevel)
+
+# Sets the path of the Clojure jar and the Criterium jar
+clojure="$root/overhead/libraries/clojure-1.8.0.jar"
+criterium="$root/overhead/libraries/criterium-0.4.3.jar"
+
+# Sets the path of the two benchmarks
+clojure_bench="$root/overhead/benchmark_overhead_clojure.clj"
+stm_io_bench="$root/overhead/benchmark_overhead_stm_io.clj"
 
 # Verifies that the necessary jar files are available
-if [[ ! -f "$clojure" || ! -f "$eclojure" || ! -f $criterium ]]
+if [[ ! -f "$clojure" || ! -f $criterium ]]
 then
     echo "ERROR: please ensure the necessary jars are available"
     exit -1
 fi
-
-# Function for running the benchmarks with a specific version of Clojure
-function run_benchmarks {
-    # $1: The path to a jar containing the Clojure runtime
-    java -cp "$1:$criterium":. clojure.main "benchmark_overhead.clj"
-}
+if [[ ! -f "$stm_io" ]]
+then
+    echo "ERROR: please ensure stm.io jar is available (use lein jar)"
+    exit -1
+fi
 
 # Stores time stamp for grouping the two experiments in the folder results
 timestamp=$(date -u +"%Y-%m-%dT%H-%M-%SZ")
-mkdir -p "results"
+mkdir -p "$root/overhead/results"
 
-# Executes the benchmarks using Clojure 1.8.0
-echo "Running Clojure Benchmarks: $clojure"
-run_benchmarks "$clojure" > "results/$timestamp-clojure-1.8.0.txt"
+# Executes the benchmarks using Clojure STM
+echo "Running Clojure STM Benchmarks: $clojure_bench"
+java -cp "$clojure:$criterium":. clojure.main "$clojure_bench" > "$root/overhead/results/$timestamp-clojure-1.8.0.txt"
 
-# Executes the benchmarks using eClojure 1.8.0
-echo "Running eClojure Benchmarks: $eclojure"
-run_benchmarks "$eclojure" > "results/$timestamp-eclojure-1.8.0.txt"
+# Executes the benchmarks using stm.io STM
+echo "Running stm.io STM Benchmarks: $stm_io_bench"
+java -cp "$clojure:$stm_io:$criterium":. clojure.main "$stm_io_bench" > "$root/overhead/results/$timestamp-stm-io-1.8.0.txt"
