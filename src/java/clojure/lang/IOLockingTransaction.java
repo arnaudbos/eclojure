@@ -47,6 +47,7 @@ public class IOLockingTransaction extends LockingTransaction {
         Collections.newSetFromMap(new ConcurrentHashMap<STMBlockingBehavior, Boolean>());
 
     //returns the most recent val
+    @Override
     Object lock(Ref ref){
         //can't upgrade readLock, so release it
         releaseIfEnsured(ref);
@@ -248,7 +249,7 @@ public class IOLockingTransaction extends LockingTransaction {
                     try {
                         EventManager.runEvents(IOLockingTransaction.ONCOMMITKEYWORD, this.eventListeners, persistentSets);
                     } catch(RetryEx ex) {
-                        throw new STMEventException("stm transaction restarted doing on-commit event");
+                        throw new STMEventException("stm transaction restarted during on-commit event");
                     }
 
                     //at this point, all values computed, all refs to be written locked
@@ -283,6 +284,11 @@ public class IOLockingTransaction extends LockingTransaction {
 
                     done = true;
                     info.status.set(COMMITTED);
+                }
+                else if(info.status.get() == KILLED)
+                {
+                    //transaction killed, make sure on-abort events are executed
+                    throw retryex;
                 }
             } catch(RetryEx ex) {
 				// Ignore the exception so we retry rather than fall out
@@ -476,7 +482,7 @@ public class IOLockingTransaction extends LockingTransaction {
         try {
             EventManager.runEvents(IOLockingTransaction.ONABORTKEYWORD, this.eventListeners, null);
         } catch(RetryEx ex) {
-            throw new STMEventException("stm transaction restarted doing on-abort event");
+            throw new STMEventException("stm transaction restarted during on-abort event");
         }
     }
 }

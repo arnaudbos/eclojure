@@ -83,7 +83,6 @@
     (is (== @event-ref 5))))
 
 (deftest after-commit-event
-  ; The transaction aborts so a ref cannot be changed
   (with-local-vars [event-var 0]
     (dosync
       (after-commit
