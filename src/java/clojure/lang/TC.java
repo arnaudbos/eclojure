@@ -38,8 +38,8 @@ static public Object stmOrElse(boolean orElseOnRetryEx, ISeq body) {
 	return transaction.doOrElse(orElseOnRetryEx, fns);
 }
 
-static public void stmAbort() throws Exception {
+static public void stmTerminate() throws Exception {
 	IOLockingTransaction transaction = IOLockingTransaction.getEx();
-    transaction.abort();
+    transaction.terminate();
 }
 }

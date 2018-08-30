@@ -112,11 +112,16 @@ public class IOLockingTransaction extends LockingTransaction {
         }
     }
 
+    @Override
     void abort() throws AbortException{
         //On-Abort events are executed here and not in exception clause due to stop
         executeOnAbortEvents();
-        stop(KILLED);
-        throw new AbortException();
+        super.abort();
+    }
+
+    void terminate() throws AbortException{
+        //Just a more consistent name according to definitions in dptClojure paper
+        abort();
     }
 
     private boolean bargeTimeElapsed(){
@@ -295,7 +300,7 @@ public class IOLockingTransaction extends LockingTransaction {
                 executeOnAbortEvents();
 			} catch(AbortException ae) {
                 // We want to terminate the transaction but have nothing to return,
-                // on-abort events are executed by stop before it throws this exception
+                // on-abort events are executed by abort before it throws this exception
                 return null;
 			} catch(Exception exception) {
                 executeOnAbortEvents();

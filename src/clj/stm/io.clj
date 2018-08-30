@@ -244,4 +244,4 @@
 (defn terminate
   "Returns the context for both types of events, returns nil if no context exists"
   []
-  (TC/stmAbort))
+  (TC/stmTerminate))
