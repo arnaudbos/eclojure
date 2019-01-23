@@ -365,10 +365,11 @@ and the thread.
 
 What we have here is a thread that is busy waiting, and a waste of processor
 time.  
-How can we make better use of our CPU avoid busy-waiting on the account's
+How can we make better use of our CPU and avoid busy-waiting on the account's
 balance?
 
-We could make use of a watch function on the `acc1` ref, but it would be awkward.
+We could make use of a watch function on the `acc1` ref, but it would be
+awkward (try it).
 
 We will now revisit the previous example with stm.io's `retry` macro flavors.
 
@@ -587,6 +588,7 @@ Any other exception will
 **TODO** Explain gotchas when using `retry`
 
 * coarse vs fine-grained retry
+* deadlock yourself
 * context switching
 * starvation
 * uncaught exceptions during unlocking predicate execution :boom:

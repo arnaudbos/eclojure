@@ -12,6 +12,11 @@
 
 /* rich Jul 26, 2007 */
 
+/*
+TODO * Finish nested transactions fix
+TODO * Deal with abort events in orElse when nested transactions is done
+ */
+
 package clojure.lang;
 
 import java.util.*;
@@ -22,10 +27,10 @@ import java.util.concurrent.TimeUnit;
 @SuppressWarnings({"SynchronizeOnNonFinalField"})
 public class IOLockingTransaction extends LockingTransaction {
 
-	// Event handle keywords, public to allow use by macros, ensures change are reflected in both places
-	public static final Keyword ONABORTKEYWORD = Keyword.intern("on-abort");
-	public static final Keyword ONCOMMITKEYWORD = Keyword.intern("on-commit");
-	public static final Keyword AFTERCOMMITKEYWORD = Keyword.intern("after-commit");
+//    // Event handle keywords, public to allow use by macros, ensures change are reflected in both places
+//    public static final Keyword ONABORTKEYWORD = Keyword.intern("on-abort");
+//    public static final Keyword ONCOMMITKEYWORD = Keyword.intern("on-commit");
+//    public static final Keyword AFTERCOMMITKEYWORD = Keyword.intern("after-commit");
 
     static class TCRetryEx extends RetryEx{
     }
@@ -37,14 +42,47 @@ public class IOLockingTransaction extends LockingTransaction {
     }
 
     static final RetryEx tcRetryex = new TCRetryEx();
-    final HashSet<Ref> gets = new HashSet<Ref>();
 
-	private final HashMap<Keyword, ArrayList<EventFn>> eventListeners = new HashMap<Keyword, ArrayList<EventFn>>();
+    public IOLockingTransaction() {
+//        eventListeners.push(new HashMap<Keyword, ArrayList<EventFn>>());
+        gets.push(new HashSet<Ref>());
+        actions.push(new ArrayList<Agent.Action>());
+        vals.push(new HashMap<Ref, Object>());
+        sets.push(new HashSet<Ref>());
+        commutes.push(new TreeMap<Ref, ArrayList<CFn>>());
+        ensures.push(new HashSet<Ref>());
+        // blockingBehaviors is empty FIXME implement STMBlockingBehaviorNoop for nested retries?
+    }
 
-	private boolean orElseRunning = false;
-    private STMBlockingBehavior blockingBehavior = null;
-    private final static Collection<STMBlockingBehavior> blockingBehaviors =
-        Collections.newSetFromMap(new ConcurrentHashMap<STMBlockingBehavior, Boolean>());
+    // nested transactions
+    private boolean orElseRunning = false;
+//    private final ArrayDeque<HashMap<Keyword, ArrayList<EventFn>>> eventListeners = new ArrayDeque<HashMap<Keyword, ArrayList<EventFn>>>();
+    final ArrayDeque<HashSet<Ref>> gets = new ArrayDeque<HashSet<Ref>>();
+    final ArrayDeque<ArrayList<Agent.Action>> actions = new ArrayDeque<ArrayList<Agent.Action>>();
+    final ArrayDeque<HashMap<Ref, Object>> vals = new ArrayDeque<HashMap<Ref, Object>>();
+    final ArrayDeque<HashSet<Ref>> sets = new ArrayDeque<HashSet<Ref>>();
+    final ArrayDeque<TreeMap<Ref, ArrayList<CFn>>> commutes = new ArrayDeque<TreeMap<Ref, ArrayList<CFn>>>();
+    final ArrayDeque<HashSet<Ref>> ensures = new ArrayDeque<HashSet<Ref>>();
+    private STMBlockingBehavior blockingBehaviors = null;
+    private final static Collection<STMBlockingBehavior> sharedBlockingBehaviors =
+            Collections.newSetFromMap(new ConcurrentHashMap<STMBlockingBehavior, Boolean>());
+
+    @Override
+    void stop(int status) {
+        if(info != null)
+        {
+            synchronized(info)
+            {
+                info.status.set(status);
+                info.latch.countDown();
+            }
+            info = null;
+            vals.clear();
+            sets.clear();
+            commutes.clear();
+            //actions.clear();
+        }
+    }
 
     //returns the most recent val
     @Override
@@ -88,8 +126,8 @@ public class IOLockingTransaction extends LockingTransaction {
             throw retryex;
         }
 
-        //Executes on-abort events before stopping and blocking
-        executeOnAbortEvents();
+//        //Executes on-abort events before stopping and blocking
+//        executeOnAbortEvents();
 
         //stop prior to blocking
         stop(RETRY);
@@ -104,6 +142,7 @@ public class IOLockingTransaction extends LockingTransaction {
         throw retryex;
     }
 
+    // FIXME manage stacks
     private void releaseIfEnsured(Ref ref){
         if(ensures.contains(ref))
         {
@@ -114,8 +153,8 @@ public class IOLockingTransaction extends LockingTransaction {
 
     @Override
     void abort() throws AbortException{
-        //On-Abort events are executed here and not in exception clause due to stop
-        executeOnAbortEvents();
+//        //On-Abort events are executed here and not in exception clause due to stop
+//        executeOnAbortEvents();
         super.abort();
     }
 
@@ -190,12 +229,13 @@ public class IOLockingTransaction extends LockingTransaction {
         for(int i = 0; !done && i < RETRY_LIMIT; i++)
         {
             //Blocks on any set blocking behaviors and clears the set of read refs
-            if (this.blockingBehavior != null) {
-                this.blockingBehavior.await();
-                IOLockingTransaction.blockingBehaviors.remove(this.blockingBehavior);
-                this.blockingBehavior = null;
+            if (this.blockingBehaviors != null) {
+                this.blockingBehaviors.await();
+                IOLockingTransaction.sharedBlockingBehaviors.remove(this.blockingBehaviors);
+                this.blockingBehaviors = null;
             }
             gets.clear();
+            // TODO Should I clear other stacks here too? The tx is restarting so...
 
             try
             {
@@ -207,15 +247,17 @@ public class IOLockingTransaction extends LockingTransaction {
                 }
                 info = new Info(RUNNING, startPoint);
                 ret = fn.call();
+                // TODO at this point, all nested transactions should be done: all stacks should be of depth 1
+
                 //make sure no one has killed us before this point, and can't from now on
                 if(info.status.compareAndSet(RUNNING, COMMITTING))
                 {
                     for(Map.Entry<Ref, ArrayList<CFn>> e : commutes.entrySet())
                     {
                         Ref ref = e.getKey();
-                        if(sets.contains(ref)) continue;
+                        if(sets.contains(ref)) continue;//FIXME stack
 
-                        boolean wasEnsured = ensures.contains(ref);
+                        boolean wasEnsured = ensures.contains(ref);//FIXME stack
                         //can't upgrade readLock, so release it
                         releaseIfEnsured(ref);
                         tryWriteLock(ref);
@@ -249,13 +291,13 @@ public class IOLockingTransaction extends LockingTransaction {
                         ref.validate(ref.getValidator(), e.getValue());
                     }
 
-					//Notify all listeners for "on-commit" event
-					PersistentHashSet persistentSets = PersistentHashSet.create(RT.seq(this.vals.keySet()));
-                    try {
-                        EventManager.runEvents(IOLockingTransaction.ONCOMMITKEYWORD, this.eventListeners, persistentSets);
-                    } catch(RetryEx ex) {
-                        throw new STMEventException("stm transaction restarted during on-commit event");
-                    }
+//                    //Notify all listeners for "on-commit" event
+//                    PersistentHashSet persistentSets = PersistentHashSet.create(RT.seq(this.vals.keySet()));
+//                    try {
+//                        EventManager.runEvents(IOLockingTransaction.ONCOMMITKEYWORD, this.eventListeners, persistentSets);
+//                    } catch(RetryEx ex) {
+//                        throw new STMEventException("stm transaction restarted during on-commit event");
+//                    }
 
                     //at this point, all values computed, all refs to be written locked
                     //no more client code to be called
@@ -296,15 +338,15 @@ public class IOLockingTransaction extends LockingTransaction {
                     throw retryex;
                 }
             } catch(RetryEx ex) {
-				// Ignore the exception so we retry rather than fall out
-                executeOnAbortEvents();
-			} catch(AbortException ae) {
-                // We want to terminate the transaction but have nothing to return,
-                // on-abort events are executed by abort before it throws this exception
-                return null;
-			} catch(Exception exception) {
-                executeOnAbortEvents();
-                throw exception;
+                // Ignore the exception so we retry rather than fall out
+//                executeOnAbortEvents();
+//            } catch(AbortException ae) {
+//                // We want to terminate the transaction but have nothing to return,
+//                // on-abort events are executed by abort before it throws this exception
+//                return null;
+//            } catch(Exception exception) {
+//                executeOnAbortEvents();
+//                throw exception;
             }
             finally
             {
@@ -331,18 +373,18 @@ public class IOLockingTransaction extends LockingTransaction {
                         {
                             Agent.dispatchAction(action);
                         }
-                        for (STMBlockingBehavior blockingBehavior : IOLockingTransaction.blockingBehaviors)
+                        for (STMBlockingBehavior blockingBehavior : IOLockingTransaction.sharedBlockingBehaviors)
                         {
                             blockingBehavior.handleChanged();
                         }
-                        EventManager.runEvents(IOLockingTransaction.AFTERCOMMITKEYWORD, this.eventListeners, null);
+//                        EventManager.runEvents(IOLockingTransaction.AFTERCOMMITKEYWORD, this.eventListeners, null);
                     }
                 }
                 finally
                 {
                     notify.clear();
                     actions.clear();
-					eventListeners.clear();
+//                    eventListeners.clear();
                 }
             }
         }
@@ -350,18 +392,27 @@ public class IOLockingTransaction extends LockingTransaction {
             throw Util.runtimeException("Transaction failed after reaching retry limit");
         return ret;
     }
+//
+//    HashMap<Keyword, ArrayList<EventFn>> getEventListeners() {
+//        return this.eventListeners;
+//    }
 
-	HashMap<Keyword, ArrayList<EventFn>> getEventListeners() {
-		return this.eventListeners;
-	}
+    @Override
+    public void enqueue(Agent.Action action) {//TODO Done
+        actions.peek().add(action);
+    }
 
-	@Override
-    Object doGet(Ref ref){
+    @Override
+    Object doGet(Ref ref){//TODO Done
         if(!info.running())
             throw retryex;
-        gets.add(ref);
-        if(vals.containsKey(ref))
-            return vals.get(ref);
+        gets.peek().add(ref);
+        for (HashMap<Ref, Object> next : vals)
+        {
+            if (next.containsKey(ref))
+                return next.get(ref);
+        }
+
         try
         {
             ref.lock.readLock().lock();
@@ -385,11 +436,32 @@ public class IOLockingTransaction extends LockingTransaction {
     }
 
     @Override
-    void doEnsure(Ref ref){
+    Object doSet(Ref ref, Object val) {//TODO Done except the FIXME
         if(!info.running())
             throw retryex;
-        if(ensures.contains(ref))
-            return;
+        for (TreeMap<Ref, ArrayList<CFn>> next : commutes)
+        {
+            if (next.containsKey(ref))
+                throw new IllegalStateException("Can't set after commute"); //FIXME is there a problem with orElse catch blocks?
+        }
+        if(!sets.peek().contains(ref))
+        {
+            sets.peek().add(ref);
+            lock(ref);
+        }
+        vals.peek().put(ref, val);
+        return val;
+    }
+
+    @Override
+    void doEnsure(Ref ref){//TODO Done
+        if(!info.running())
+            throw retryex;
+        for (HashSet<Ref> next : ensures)
+        {
+            if (next.contains(ref))
+                return;
+        }
         ref.lock.readLock().lock();
 
         //someone completed a write after our snapshot
@@ -411,9 +483,57 @@ public class IOLockingTransaction extends LockingTransaction {
             }
         }
         else
-            ensures.add(ref);
+            ensures.peek().add(ref);
     }
 
+    @Override
+    Object doCommute(Ref ref, IFn fn, ISeq args) {//TODO Done
+        if(!info.running())
+            throw retryex;
+        HashMap<Ref, Object> found = null;
+        for (HashMap<Ref, Object> next : vals)
+        {
+            if (next.containsKey(ref))
+                found = next;
+        }
+        if(found==null)
+        {
+            Object val = null;
+            try
+            {
+                ref.lock.readLock().lock();
+                val = ref.tvals == null ? null : ref.tvals.val;
+            }
+            finally
+            {
+                ref.lock.readLock().unlock();
+            }
+            vals.peek().put(ref, val);
+        }
+        ArrayList<CFn> fns = null;
+        for (TreeMap<Ref, ArrayList<CFn>> next : commutes) {
+            if (next.containsKey(ref))
+                fns = next.get(ref);
+        }
+        if(fns == null)
+            commutes.peek().put(ref, fns = new ArrayList<CFn>());
+        fns.add(new CFn(fn, args));
+
+        Object ret = null;
+        if(found==null)
+        {
+            ret = fn.applyTo(RT.cons(vals.peek().get(ref), args));
+        }
+        else
+        {
+            ret = fn.applyTo(RT.cons(found.get(ref), args));
+        }
+
+        vals.peek().put(ref, ret);
+        return ret;
+    }
+
+    // FIXME handle blockingBehaviors stack for nested transaction whose parent does or doesn't block
     void doBlocking(HashSet<Ref> refs, IFn fn, ISeq args, boolean blockOnAll) throws InterruptedException, RetryEx {
         if ( ! info.running()) {
             throw retryex;
@@ -421,28 +541,31 @@ public class IOLockingTransaction extends LockingTransaction {
 
         if (refs == null) {
             refs = new HashSet<Ref>();
-            refs.addAll(this.gets);
+            for (HashSet<Ref> next : this.gets)
+            {
+                refs.addAll(next);
+            }
         }
 
-		if (refs.isEmpty()) {
-			throw new IllegalArgumentException("The set of Refs cannot be empty");
-		}
+        if (refs.isEmpty()) {
+            throw new IllegalArgumentException("The set of Refs cannot be empty");
+        }
 
         if (blockOnAll) {
-			if (fn != null) {
-				this.blockingBehavior = new STMBlockingBehaviorFnAll(refs, fn, args, this.readPoint);
-			} else {
-				this.blockingBehavior = new STMBlockingBehaviorAll(refs, this.readPoint);
-			}
+            if (fn != null) {
+                this.blockingBehaviors = new STMBlockingBehaviorFnAll(refs, fn, args, this.readPoint);
+            } else {
+                this.blockingBehaviors = new STMBlockingBehaviorAll(refs, this.readPoint);
+            }
         } else {
-			if (fn != null) {
-				this.blockingBehavior = new STMBlockingBehaviorFnAny(refs, fn, args, this.readPoint);
-			} else {
-                this.blockingBehavior = new STMBlockingBehaviorAny(refs, this.readPoint);
-			}
+            if (fn != null) {
+                this.blockingBehaviors = new STMBlockingBehaviorFnAny(refs, fn, args, this.readPoint);
+            } else {
+                this.blockingBehaviors = new STMBlockingBehaviorAny(refs, this.readPoint);
+            }
         }
-        IOLockingTransaction.blockingBehaviors.add(this.blockingBehavior);
-        //Use of tcRetryex allows code to differentiate between a retry/retry-all retry and a normal retry
+        IOLockingTransaction.sharedBlockingBehaviors.add(this.blockingBehaviors);
+        //Use of tcRetryex allows code to differentiate between a retry/retry-all retry and a "normal" retry
         throw tcRetryex;
     }
 
@@ -452,42 +575,154 @@ public class IOLockingTransaction extends LockingTransaction {
         }
         this.orElseRunning = true;
 
+//        int i = 0;
+        Set<Ref> nestedBlockingBehaviors = new HashSet<Ref>();
+
         //Checks if or-else should run the next function only for retry/retry-all or all retryex
         if(orElseOnRetryEx) {
             for (IFn fn : fns) {
                 try {
-                    return fn.invoke();
-                } catch (RetryEx ex) {
+//                    eventListeners.push(new HashMap<Keyword, ArrayList<EventFn>>());
+                    pushRefs();
+
+                    Object ret = fn.invoke();
+
+//                    HashMap<Keyword, ArrayList<EventFn>> altEventListeners = eventListeners.pop();
+//                    eventListeners.peek().putAll(altEventListeners);
+                    mergeRefs();
+
+                    return ret;
+                } catch (Throwable t) {
+                    if (t instanceof RetryEx) {
+                        // merge blockingBehaviors here
+                        nestedBlockingBehaviors.addAll(this.gets.peek());
+                    }
+
+                    //FIXME do this here or unroll at the upmost?
+                    // let ex bubble-up and end the enclosing transaction? after all the `pop`s?
+                    // special case of AbortException is handled by abort which executes on-abort events before it throws this exception=
+                    // Comment everything related to events and figure that out before uncommenting
+//                    try {
+//                        // only call listeners for current stack or unroll (descendingIterator) the stack? The later I'd say.
+//                        EventManager.runEvents(IOLockingTransaction.ONABORTKEYWORD, this.eventListeners.peek(), null);
+//                    } catch(RetryEx e) {
+//                        throw new STMEventException("stm transaction restarted during retry");
+//                    }
+
                     // We ignore the exception to allow the next function to execute
+//                    eventListeners.pop(); // keep stack in order to execute onAbort?
+                    popRefs();
                 }
             }
+            // all alternatives issued retry
         } else {
             for (IFn fn : fns) {
+                // TODO same as above, take care with RetryEx
                 try {
-                    return fn.invoke();
-                } catch (TCRetryEx ex) {
-                    // We ignore the exception to allow the next function to execute
+//                    eventListeners.push(new HashMap<Keyword, ArrayList<EventFn>>());
+                    pushRefs();
+
+                    Object ret = fn.invoke();
+
+//                    HashMap<Keyword, ArrayList<EventFn>> altEventListeners = eventListeners.pop();
+//                    eventListeners.peek().putAll(altEventListeners);
+                    mergeRefs();
+
+                    return ret;
+                } catch (RetryEx ex) {
+                    if (ex instanceof TCRetryEx) {
+                        // merge blockingBehaviors here
+                        nestedBlockingBehaviors.addAll(this.gets.peek());
+
+//                        eventListeners.pop(); // keep stack in order to execute onAbort?
+                        popRefs();
+
+                        // We ignore the exception to allow the next function to execute
+                    }
+
+                    //FIXME do this here or unroll at the upmost?
+                    // let ex bubble-up and end the enclosing transaction? after all the `pop`s?
+                    // special case of AbortException is handled by abort which executes on-abort events before it throws this exception=
+                    // Comment everything related to events and figure that out before uncommenting
+//                    try {
+//                        // only call listeners for current stack or unroll (descendingIterator) the stack? The later I'd say.
+//                        EventManager.runEvents(IOLockingTransaction.ONABORTKEYWORD, this.eventListeners.peek(), null);
+//                    } catch(RetryEx e) {
+//                        throw new STMEventException("stm transaction restarted during retry");
+//                    }
+
+                } catch (Exception ex) {
+
                 }
             }
         }
-		this.orElseRunning = false;
+        this.orElseRunning = false;
         throw tcRetryex;
     }
 
-    private void executeOnAbortEvents() {
-        //BlockAndBail stops the transaction before it throws an retryex exception,
-        //so it needs to executes the necessary events as stopping releases ownership of refs
-        if(info == null) {
-            return;
+    private void pushRefs() {
+        // push new refs onto stack only inside doOrElse
+        if(! this.orElseRunning) {
+            throw new STMEventException("stm nested transaction starting out of orElse");
         }
 
-        synchronized(info) {
-            info.status.set(COMMITTING);
-        }
-        try {
-            EventManager.runEvents(IOLockingTransaction.ONABORTKEYWORD, this.eventListeners, null);
-        } catch(RetryEx ex) {
-            throw new STMEventException("stm transaction restarted during on-abort event");
-        }
+        gets.push(new HashSet<Ref>());
+        actions.push(new ArrayList<Agent.Action>());
+        vals.push(new HashMap<Ref, Object>());
+        sets.push(new HashSet<Ref>());
+        commutes.push(new TreeMap<Ref, ArrayList<CFn>>());
+        ensures.push(new HashSet<Ref>());
     }
+
+    private void mergeRefs() {
+        // pop then merge refs from nested transactions only inside doOrElse
+        if(! this.orElseRunning) {
+            throw new STMEventException("stm nested transaction merging out of orElse");
+        }
+
+        HashSet<Ref> altGets = gets.pop();
+        gets.peek().addAll(altGets);
+        ArrayList<Agent.Action> altActions = actions.pop();
+        actions.peek().addAll(altActions);
+        HashMap<Ref, Object> altVals = vals.pop();
+        vals.peek().putAll(altVals);
+        HashSet<Ref> altSets = sets.pop();
+        sets.peek().addAll(altSets);
+        TreeMap<Ref, ArrayList<CFn>> altCommutes = commutes.pop();
+        commutes.peek().putAll(altCommutes);
+        HashSet<Ref> altEnsures = ensures.pop();
+        ensures.peek().addAll(altEnsures);
+    }
+
+    private void popRefs() {
+        // pop current refs from stack only inside doOrElse
+        if(! this.orElseRunning) {
+            throw new STMEventException("stm nested transaction ending out of orElse");
+        }
+
+        gets.pop();
+        actions.pop();
+        vals.pop();
+        sets.pop();
+        commutes.pop();
+        ensures.pop();
+    }
+//
+//    private void executeOnAbortEvents() {
+//        //BlockAndBail stops the transaction before it throws an retryex exception,
+//        //so it needs to executes the necessary events as stopping releases ownership of refs
+//        if(info == null) {
+//            return;
+//        }
+//
+//        synchronized(info) {
+//            info.status.set(COMMITTING);
+//        }
+//        try {
+//            // FIXME only call listeners for current stack or unroll (descendingIterator?) the stack? The later I'd say.
+//            EventManager.runEvents(IOLockingTransaction.ONABORTKEYWORD, this.eventListeners, null);
+//        } catch(RetryEx ex) {
+//            throw new STMEventException("stm transaction restarted during on-abort event");
+//        }
+//    }
 }
