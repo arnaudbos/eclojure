@@ -59,10 +59,10 @@ public class EventManager {
      */
     public static EventFn stmListen(Keyword key, IFn fn, ISeq args, boolean deleteAfterRun) {
         // Throws exception if no transaction is running
-        IOLockingTransaction transaction = IOLockingTransaction.getEx();
+        IOLockingTransaction transaction = IOLockingTransaction.getEx();//TODO remove `IO`?
 
         // Events constructed inside a transaction is always local to the transaction only
-        Map<Keyword, ArrayList<EventFn>> eventListeners = transaction.getEventListeners();
+        Map<Keyword, ArrayList<EventFn>> eventListeners = transaction.getEventListeners();//FIXME
         if ( ! eventListeners.containsKey(key)) {
             eventListeners.put(key, new ArrayList<EventFn>());
         }
@@ -81,8 +81,8 @@ public class EventManager {
      */
     public static void stmNotify(Keyword key, Object context) {
         // Throws exception if no transaction is running
-        IOLockingTransaction transaction = IOLockingTransaction.getEx();
-        Map<Keyword, ArrayList<EventFn>> eventListeners = transaction.getEventListeners();
+        IOLockingTransaction transaction = IOLockingTransaction.getEx();//TODO remove `IO`?
+        Map<Keyword, ArrayList<EventFn>> eventListeners = transaction.getEventListeners();//FIXME
         EventManager.runEvents(key, eventListeners, context);
     }
 
@@ -98,7 +98,7 @@ public class EventManager {
      * @return               Will return a EventFn object to be used for eventual removal
      */
     public static EventFn listen(Keyword key, IFn fn, ISeq args, boolean threadLocal, boolean deleteAfterRun) {
-        if (IOLockingTransaction.isRunning()) {
+        if (IOLockingTransaction.isRunning()) {//TODO remove `IO`?
             throw new IllegalStateException("Listen is not allowed in a transaction, use stmListen");
         }
 
@@ -128,7 +128,7 @@ public class EventManager {
      * @param key The key indicating which events to notify
      */
     public static void notify(Keyword key, Object context) {
-        if (IOLockingTransaction.isRunning()) {
+        if (IOLockingTransaction.isRunning()) {//TODO remove `IO`?
             throw new IllegalStateException("Notify is not allowed in a transaction, use stmNotify");
         }
         synchronized (EventManager.globalEvents) {
@@ -145,7 +145,7 @@ public class EventManager {
      * @param dismissFrom A keyword indicating if the event should be dismissed from local, global or all
      */
     public static void dismiss(Keyword key, EventFn eventFn, Keyword dismissFrom) {
-        if (IOLockingTransaction.isRunning()) {
+        if (IOLockingTransaction.isRunning()) {//TODO remove `IO`?
             throw new IllegalStateException("Dismiss is not allowed in a transaction, events are dismissed with the transaction");
         }
 

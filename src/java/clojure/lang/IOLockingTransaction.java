@@ -67,7 +67,7 @@ public class IOLockingTransaction extends LockingTransaction {
     private final static Collection<STMBlockingBehavior> sharedBlockingBehaviors =
             Collections.newSetFromMap(new ConcurrentHashMap<STMBlockingBehavior, Boolean>());
 
-    @Override
+    @Override //TODO check everything is cleared correctly
     void stop(int status) {
         if(info != null)
         {
@@ -180,18 +180,18 @@ public class IOLockingTransaction extends LockingTransaction {
         return barged;
     }
 
-    static IOLockingTransaction getEx(){
+    static IOLockingTransaction getEx(){//TODO keep, remove or just call LockingTransaction.getEx?
         IOLockingTransaction t = (IOLockingTransaction) transaction.get();
         if(t == null || t.info == null)
             throw new IllegalStateException("No transaction running");
         return t;
     }
 
-    static public boolean isRunning(){
+    static public boolean isRunning(){//TODO keep, remove or just call LockingTransaction.isRunning?
         return getRunning() != null;
     }
 
-    static IOLockingTransaction getRunning(){
+    static IOLockingTransaction getRunning(){//TODO keep, remove or just call LockingTransaction.getRunning?
         IOLockingTransaction t = (IOLockingTransaction) transaction.get();
         if(t == null || t.info == null)
             return null;
@@ -199,7 +199,7 @@ public class IOLockingTransaction extends LockingTransaction {
     }
 
     static public Object runInTransaction(Callable fn) throws Exception{
-        IOLockingTransaction t = (IOLockingTransaction) transaction.get();
+        IOLockingTransaction t = (IOLockingTransaction) transaction.get();//TODO remove `IO` and cast?
         Object ret;
         if(t == null) {
             transaction.set(t = new IOLockingTransaction());

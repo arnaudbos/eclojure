@@ -25,7 +25,7 @@ public class JavaRef extends Ref {
     }
 
     public Object deref() {
-        IOLockingTransaction t = IOLockingTransaction.getRunning();
+        IOLockingTransaction t = IOLockingTransaction.getRunning();//TODO remove `IO`?
         if(t == null)
             return currentVal();
 
