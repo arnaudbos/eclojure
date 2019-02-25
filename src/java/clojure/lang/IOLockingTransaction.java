@@ -35,6 +35,10 @@ public class IOLockingTransaction extends LockingTransaction {
     static class TCRetryEx extends RetryEx{
     }
 
+    enum Unit{
+        UNIT
+    }
+
     static class STMEventException extends RuntimeException{
         public STMEventException(String message) {
             super(message);
@@ -51,11 +55,10 @@ public class IOLockingTransaction extends LockingTransaction {
         sets.push(new HashSet<Ref>());
         commutes.push(new TreeMap<Ref, ArrayList<CFn>>());
         ensures.push(new HashSet<Ref>());
-        // blockingBehaviors is empty FIXME implement STMBlockingBehaviorNoop for nested retries?
     }
 
     // nested transactions
-    private boolean orElseRunning = false;
+    final ArrayDeque<Unit> orElseRunning = new ArrayDeque<Unit>();
 //    private final ArrayDeque<HashMap<Keyword, ArrayList<EventFn>>> eventListeners = new ArrayDeque<HashMap<Keyword, ArrayList<EventFn>>>();
     final ArrayDeque<HashSet<Ref>> gets = new ArrayDeque<HashSet<Ref>>();
     final ArrayDeque<ArrayList<Agent.Action>> actions = new ArrayDeque<ArrayList<Agent.Action>>();
@@ -67,7 +70,7 @@ public class IOLockingTransaction extends LockingTransaction {
     private final static Collection<STMBlockingBehavior> sharedBlockingBehaviors =
             Collections.newSetFromMap(new ConcurrentHashMap<STMBlockingBehavior, Boolean>());
 
-    @Override //TODO check everything is cleared correctly
+    @Override //TODO check everything is cleared correctly // DONE
     void stop(int status) {
         if(info != null)
         {
@@ -80,7 +83,7 @@ public class IOLockingTransaction extends LockingTransaction {
             vals.clear();
             sets.clear();
             commutes.clear();
-            //actions.clear();
+            // gets, actions, ensures and blockingBehaviors are cleared in #run
         }
     }
 
@@ -122,7 +125,7 @@ public class IOLockingTransaction extends LockingTransaction {
 
     private Object blockAndBail(Info refinfo){
         // Disables block and bail when doing an or else block
-        if(this.orElseRunning) {
+        if(!this.orElseRunning.isEmpty()) {
             throw retryex;
         }
 
@@ -180,26 +183,26 @@ public class IOLockingTransaction extends LockingTransaction {
         return barged;
     }
 
-    static IOLockingTransaction getEx(){//TODO keep, remove or just call LockingTransaction.getEx?
-        IOLockingTransaction t = (IOLockingTransaction) transaction.get();
-        if(t == null || t.info == null)
-            throw new IllegalStateException("No transaction running");
-        return t;
+    static IOLockingTransaction getEx(){
+        LockingTransaction t = transaction.get();
+        if(t.info == null || !(t instanceof IOLockingTransaction))
+            throw new IllegalStateException("No IO transaction running");
+        return (IOLockingTransaction) t;
     }
 
-    static public boolean isRunning(){//TODO keep, remove or just call LockingTransaction.isRunning?
+    static public boolean isRunning(){
         return getRunning() != null;
     }
 
-    static IOLockingTransaction getRunning(){//TODO keep, remove or just call LockingTransaction.getRunning?
-        IOLockingTransaction t = (IOLockingTransaction) transaction.get();
-        if(t == null || t.info == null)
+    static IOLockingTransaction getRunning(){
+        LockingTransaction t = transaction.get();
+        if(t.info == null || !(t instanceof IOLockingTransaction))
             return null;
-        return t;
+        return (IOLockingTransaction) t;
     }
 
     static public Object runInTransaction(Callable fn) throws Exception{
-        IOLockingTransaction t = (IOLockingTransaction) transaction.get();//TODO remove `IO` and cast?
+        LockingTransaction t = transaction.get();
         Object ret;
         if(t == null) {
             transaction.set(t = new IOLockingTransaction());
@@ -209,6 +212,9 @@ public class IOLockingTransaction extends LockingTransaction {
                 transaction.remove();
             }
         } else {
+            //TODO Promote to IOLockingTransaction? Is it possible?
+            // if (! (t instanceof IOLockingTransaction)){
+            // }
             if(t.info != null) {
                 ret = fn.call();
             } else {
@@ -235,7 +241,10 @@ public class IOLockingTransaction extends LockingTransaction {
                 this.blockingBehaviors = null;
             }
             gets.clear();
-            // TODO Should I clear other stacks here too? The tx is restarting so...
+            // TODO: Should I clear other stacks here too? The tx is restarting so...
+            //   DONE
+            //   ==> vals, sets and commutes are cleared in `stop`
+            //   ==> actions, ensures and blockingBehaviors are cleared below
 
             try
             {
@@ -533,7 +542,6 @@ public class IOLockingTransaction extends LockingTransaction {
         return ret;
     }
 
-    // FIXME handle blockingBehaviors stack for nested transaction whose parent does or doesn't block
     void doBlocking(HashSet<Ref> refs, IFn fn, ISeq args, boolean blockOnAll) throws InterruptedException, RetryEx {
         if ( ! info.running()) {
             throw retryex;
@@ -573,9 +581,7 @@ public class IOLockingTransaction extends LockingTransaction {
         if ( ! info.running()) {
             throw retryex;
         }
-        this.orElseRunning = true;
 
-//        int i = 0;
         Set<Ref> nestedBlockingBehaviors = new HashSet<Ref>();
 
         //Checks if or-else should run the next function only for retry/retry-all or all retryex
@@ -599,7 +605,6 @@ public class IOLockingTransaction extends LockingTransaction {
                     }
 
                     //FIXME do this here or unroll at the upmost?
-                    // let ex bubble-up and end the enclosing transaction? after all the `pop`s?
                     // special case of AbortException is handled by abort which executes on-abort events before it throws this exception=
                     // Comment everything related to events and figure that out before uncommenting
 //                    try {
@@ -611,13 +616,19 @@ public class IOLockingTransaction extends LockingTransaction {
 
                     // We ignore the exception to allow the next function to execute
 //                    eventListeners.pop(); // keep stack in order to execute onAbort?
+
                     popRefs();
+
+                    if (! (t instanceof RetryEx)) {
+                        // let ex bubble-up and end the enclosing transaction after all the `pop`s
+                        throw new RuntimeException("stm nested transaction failed without retrying", t);
+                    }
                 }
             }
             // all alternatives issued retry
         } else {
             for (IFn fn : fns) {
-                // TODO same as above, take care with RetryEx
+                // TODO same as above, take care with RetryEx // DONE
                 try {
 //                    eventListeners.push(new HashMap<Keyword, ArrayList<EventFn>>());
                     pushRefs();
@@ -635,13 +646,11 @@ public class IOLockingTransaction extends LockingTransaction {
                         nestedBlockingBehaviors.addAll(this.gets.peek());
 
 //                        eventListeners.pop(); // keep stack in order to execute onAbort?
-                        popRefs();
 
                         // We ignore the exception to allow the next function to execute
                     }
 
                     //FIXME do this here or unroll at the upmost?
-                    // let ex bubble-up and end the enclosing transaction? after all the `pop`s?
                     // special case of AbortException is handled by abort which executes on-abort events before it throws this exception=
                     // Comment everything related to events and figure that out before uncommenting
 //                    try {
@@ -651,21 +660,39 @@ public class IOLockingTransaction extends LockingTransaction {
 //                        throw new STMEventException("stm transaction restarted during retry");
 //                    }
 
-                } catch (Exception ex) {
+                    popRefs();
 
+                    if (! (ex instanceof TCRetryEx)) {
+                        // bubble-up if not a TCRetryEx (aka. a classic stm RetryEx has been thrown)
+                        throw ex;
+                    }
+                } catch (Throwable t) {
+                    // let throwable bubble-up and end the enclosing transaction
+                    popRefs();
+                    throw new RuntimeException("stm nested transaction failed without retrying", t);
                 }
             }
+            // all alternatives issued retry
         }
-        this.orElseRunning = false;
-        throw tcRetryex;
+
+        // wait on the union on the sets of refs that have been accessed
+        if (!nestedBlockingBehaviors.isEmpty()) {
+            // -- merge blockingBehaviors with inner, if any, in order to trim sharedBlockingBehaviors
+            if (blockingBehaviors!=null) {
+                IOLockingTransaction.sharedBlockingBehaviors.remove(this.blockingBehaviors);
+            }
+            nestedBlockingBehaviors.addAll(this.blockingBehaviors.refSet);
+            // -- merge blockingBehaviors with inner, if any, in order to trim sharedBlockingBehaviors
+
+            this.blockingBehaviors = new STMBlockingBehaviorAny(nestedBlockingBehaviors, this.readPoint);
+            IOLockingTransaction.sharedBlockingBehaviors.add(this.blockingBehaviors);
+        }
+
+        throw retryex;
     }
 
     private void pushRefs() {
-        // push new refs onto stack only inside doOrElse
-        if(! this.orElseRunning) {
-            throw new STMEventException("stm nested transaction starting out of orElse");
-        }
-
+        orElseRunning.push(Unit.UNIT);
         gets.push(new HashSet<Ref>());
         actions.push(new ArrayList<Agent.Action>());
         vals.push(new HashMap<Ref, Object>());
@@ -675,11 +702,7 @@ public class IOLockingTransaction extends LockingTransaction {
     }
 
     private void mergeRefs() {
-        // pop then merge refs from nested transactions only inside doOrElse
-        if(! this.orElseRunning) {
-            throw new STMEventException("stm nested transaction merging out of orElse");
-        }
-
+        orElseRunning.pop();
         HashSet<Ref> altGets = gets.pop();
         gets.peek().addAll(altGets);
         ArrayList<Agent.Action> altActions = actions.pop();
@@ -695,11 +718,7 @@ public class IOLockingTransaction extends LockingTransaction {
     }
 
     private void popRefs() {
-        // pop current refs from stack only inside doOrElse
-        if(! this.orElseRunning) {
-            throw new STMEventException("stm nested transaction ending out of orElse");
-        }
-
+        orElseRunning.pop();
         gets.pop();
         actions.pop();
         vals.pop();
