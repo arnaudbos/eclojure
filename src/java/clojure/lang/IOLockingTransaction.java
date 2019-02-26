@@ -354,10 +354,10 @@ public class IOLockingTransaction extends LockingTransaction {
             } catch(RetryEx ex) {
                 // Ignore the exception so we retry rather than fall out
 //                executeOnAbortEvents();
-//            } catch(AbortException ae) {
-//                // We want to terminate the transaction but have nothing to return,
-//                // on-abort events are executed by abort before it throws this exception
-//                return null;
+            } catch(AbortException ae) {
+                // We want to terminate the transaction but have nothing to return,
+                // on-abort events are executed by abort before it throws this exception
+                return null;
 //            } catch(Exception exception) {
 //                executeOnAbortEvents();
 //                throw exception;
