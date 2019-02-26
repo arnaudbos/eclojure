@@ -248,6 +248,7 @@ public class IOLockingTransaction extends LockingTransaction {
 
             try
             {
+                pushRefs();
                 getReadPoint();
                 if(i == 0)
                 {
@@ -257,6 +258,10 @@ public class IOLockingTransaction extends LockingTransaction {
                 info = new Info(RUNNING, startPoint);
                 ret = fn.call();
                 // TODO at this point, all nested transactions should be done: all stacks should be of depth 1
+                TreeMap<Ref, ArrayList<CFn>> commutes = this.commutes.peek();
+                HashSet<Ref> sets = this.sets.peek();
+                HashSet<Ref> ensures = this.ensures.peek();
+                HashMap<Ref, Object> vals = this.vals.peek();
 
                 //make sure no one has killed us before this point, and can't from now on
                 if(info.status.compareAndSet(RUNNING, COMMITTING))
@@ -264,9 +269,9 @@ public class IOLockingTransaction extends LockingTransaction {
                     for(Map.Entry<Ref, ArrayList<CFn>> e : commutes.entrySet())
                     {
                         Ref ref = e.getKey();
-                        if(sets.contains(ref)) continue;//FIXME stack
+                        if(sets.contains(ref)) continue;
 
-                        boolean wasEnsured = ensures.contains(ref);//FIXME stack
+                        boolean wasEnsured = ensures.contains(ref);
                         //can't upgrade readLock, so release it
                         releaseIfEnsured(ref);
                         tryWriteLock(ref);
@@ -364,7 +369,7 @@ public class IOLockingTransaction extends LockingTransaction {
                     locked.get(k).lock.writeLock().unlock();
                 }
                 locked.clear();
-                for(Ref r : ensures)
+                for(Ref r : ensures.peek())
                 {
                     r.lock.readLock().unlock();
                 }
@@ -378,7 +383,7 @@ public class IOLockingTransaction extends LockingTransaction {
                         {
                             n.ref.notifyWatches(n.oldval, n.newval);
                         }
-                        for(Agent.Action action : actions)
+                        for(Agent.Action action : actions.peek())
                         {
                             Agent.dispatchAction(action);
                         }
@@ -589,12 +594,14 @@ public class IOLockingTransaction extends LockingTransaction {
             for (IFn fn : fns) {
                 try {
 //                    eventListeners.push(new HashMap<Keyword, ArrayList<EventFn>>());
+                    orElseRunning.push(Unit.UNIT);
                     pushRefs();
 
                     Object ret = fn.invoke();
 
 //                    HashMap<Keyword, ArrayList<EventFn>> altEventListeners = eventListeners.pop();
 //                    eventListeners.peek().putAll(altEventListeners);
+                    orElseRunning.pop();
                     mergeRefs();
 
                     return ret;
@@ -617,6 +624,7 @@ public class IOLockingTransaction extends LockingTransaction {
                     // We ignore the exception to allow the next function to execute
 //                    eventListeners.pop(); // keep stack in order to execute onAbort?
 
+                    orElseRunning.pop();
                     popRefs();
 
                     if (! (t instanceof RetryEx)) {
@@ -631,12 +639,14 @@ public class IOLockingTransaction extends LockingTransaction {
                 // TODO same as above, take care with RetryEx // DONE
                 try {
 //                    eventListeners.push(new HashMap<Keyword, ArrayList<EventFn>>());
+                    orElseRunning.push(Unit.UNIT);
                     pushRefs();
 
                     Object ret = fn.invoke();
 
 //                    HashMap<Keyword, ArrayList<EventFn>> altEventListeners = eventListeners.pop();
 //                    eventListeners.peek().putAll(altEventListeners);
+                    orElseRunning.pop();
                     mergeRefs();
 
                     return ret;
@@ -660,6 +670,7 @@ public class IOLockingTransaction extends LockingTransaction {
 //                        throw new STMEventException("stm transaction restarted during retry");
 //                    }
 
+                    orElseRunning.pop();
                     popRefs();
 
                     if (! (ex instanceof TCRetryEx)) {
@@ -668,6 +679,7 @@ public class IOLockingTransaction extends LockingTransaction {
                     }
                 } catch (Throwable t) {
                     // let throwable bubble-up and end the enclosing transaction
+                    orElseRunning.pop();
                     popRefs();
                     throw new RuntimeException("stm nested transaction failed without retrying", t);
                 }
@@ -692,7 +704,6 @@ public class IOLockingTransaction extends LockingTransaction {
     }
 
     private void pushRefs() {
-        orElseRunning.push(Unit.UNIT);
         gets.push(new HashSet<Ref>());
         actions.push(new ArrayList<Agent.Action>());
         vals.push(new HashMap<Ref, Object>());
@@ -702,7 +713,6 @@ public class IOLockingTransaction extends LockingTransaction {
     }
 
     private void mergeRefs() {
-        orElseRunning.pop();
         HashSet<Ref> altGets = gets.pop();
         gets.peek().addAll(altGets);
         ArrayList<Agent.Action> altActions = actions.pop();
@@ -718,7 +728,6 @@ public class IOLockingTransaction extends LockingTransaction {
     }
 
     private void popRefs() {
-        orElseRunning.pop();
         gets.pop();
         actions.pop();
         vals.pop();

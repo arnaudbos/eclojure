@@ -8,7 +8,7 @@
 ;   You must not remove this notice, or any other, from this software.
 
 (ns stm.io
-  (:import clojure.lang.EventManager)
+  ;(:import clojure.lang.EventManager)
   (:import clojure.lang.IOLockingTransaction)
   (:import clojure.lang.TC)
   (:refer-clojure :exclude [sync dosync]))
@@ -72,21 +72,21 @@
 
 
 ;;; Transactional Event Handling
-(defn stm-listen
-  "Registers a thread local transactional event identified by event-key"
-  [event-key event-fn & event-args]
-  (EventManager/stmListen event-key event-fn event-args false))
+;(defn stm-listen
+;  "Registers a thread local transactional event identified by event-key"
+;  [event-key event-fn & event-args]
+;  (EventManager/stmListen event-key event-fn event-args false))
 
-(defn stm-listen-once
-  "Registers a single run transactional event identified by event-key"
-  [event-key event-fn & event-args]
-  (EventManager/stmListen event-key event-fn event-args true))
+;(defn stm-listen-once
+;  "Registers a single run transactional event identified by event-key"
+;  [event-key event-fn & event-args]
+;  (EventManager/stmListen event-key event-fn event-args true))
 
-(defn stm-notify
-  "Notifies the transactional events identified by the event-key keyword, and
-  gives each event accesses to data given as context"
-  ([event-key] (EventManager/stmNotify event-key nil))
-  ([event-key context] (EventManager/stmNotify event-key context)))
+;(defn stm-notify
+;  "Notifies the transactional events identified by the event-key keyword, and
+;  gives each event accesses to data given as context"
+;  ([event-key] (EventManager/stmNotify event-key nil))
+;  ([event-key context] (EventManager/stmNotify event-key context)))
 
 (defmacro lock-refs
   "Takes the appropriate locks on all extractable refs in body of code"
@@ -105,35 +105,35 @@
 
 
 ;;; Special Transactional Events
-(defmacro on-abort
-  "Registers a list of expressions to be run if the transaction aborts"
-  [& body]
-  `(EventManager/stmListen IOLockingTransaction/ONABORTKEYWORD (fn [] ~@body) nil false))
-
-(defn on-abort-fn
-  "Registers a function to be run if the transaction aborts"
-  [event-fn & event-args]
-  (EventManager/stmListen IOLockingTransaction/ONABORTKEYWORD event-fn event-args false))
-
-(defmacro on-commit
-  "Registers a list of expression to be run when the transaction commits"
-  [& body]
-  `(EventManager/stmListen IOLockingTransaction/ONCOMMITKEYWORD (fn [] ~@body) nil false))
-
-(defn on-commit-fn
-  "Registers a function to be run when the transaction commits"
-  [event-fn & event-args]
-  (EventManager/stmListen IOLockingTransaction/ONCOMMITKEYWORD  event-fn event-args false))
-
-(defmacro after-commit
-  "Registers a list of expressions to be run after the transaction commit"
-  [& body]
-  `(EventManager/stmListen IOLockingTransaction/AFTERCOMMITKEYWORD (fn [] ~@body) nil false))
-
-(defn after-commit-fn
-  "Registers a function to be run after the transaction commit"
-  [event-fn & event-args]
-  (EventManager/stmListen IOLockingTransaction/AFTERCOMMITKEYWORD event-fn event-args false))
+;(defmacro on-abort
+;  "Registers a list of expressions to be run if the transaction aborts"
+;  [& body]
+;  `(EventManager/stmListen IOLockingTransaction/ONABORTKEYWORD (fn [] ~@body) nil false))
+;
+;(defn on-abort-fn
+;  "Registers a function to be run if the transaction aborts"
+;  [event-fn & event-args]
+;  (EventManager/stmListen IOLockingTransaction/ONABORTKEYWORD event-fn event-args false))
+;
+;(defmacro on-commit
+;  "Registers a list of expression to be run when the transaction commits"
+;  [& body]
+;  `(EventManager/stmListen IOLockingTransaction/ONCOMMITKEYWORD (fn [] ~@body) nil false))
+;
+;(defn on-commit-fn
+;  "Registers a function to be run when the transaction commits"
+;  [event-fn & event-args]
+;  (EventManager/stmListen IOLockingTransaction/ONCOMMITKEYWORD  event-fn event-args false))
+;
+;(defmacro after-commit
+;  "Registers a list of expressions to be run after the transaction commit"
+;  [& body]
+;  `(EventManager/stmListen IOLockingTransaction/AFTERCOMMITKEYWORD (fn [] ~@body) nil false))
+;
+;(defn after-commit-fn
+;  "Registers a function to be run after the transaction commit"
+;  [event-fn & event-args]
+;  (EventManager/stmListen IOLockingTransaction/AFTERCOMMITKEYWORD event-fn event-args false))
 
 
 ;;; Ref Method Execution Functions
@@ -189,33 +189,33 @@
 
 
 ;;; Generic Event Handling
-(defn listen
-  "Registers a thread local event for the event identified by event-key"
-  [event-key event-fn & event-args]
-  (EventManager/listen event-key event-fn event-args true false))
-
-(defn listen-with-params
-  "Registers a event for the event identified by event-key, arguments can by
-  given to configure if the listener should be thread local and if it is to be
-  deleted after listener have been executed"
-  [event-key thread-local delete-after-run event-fn & event-args]
-  (EventManager/listen event-key event-fn event-args thread-local delete-after-run))
-
-(defn notify
-  "Notifies the events identified by the event-key keyword, and gives each
-  event accesses to data given as context"
-  ([event-key] (EventManager/notify event-key nil))
-  ([event-key context] (EventManager/notify event-key context)))
-
-(defn dismiss
-  "Dismisses an event identified by the combination of event-key and event-fn, "
-  [event-key event-fn dismiss-from]
-  (EventManager/dismiss event-key event-fn dismiss-from))
-
-(defn context
-  "Returns the context for both types of events, returns nil if no context exists"
-  []
-  (EventManager/getContext))
+;(defn listen
+;  "Registers a thread local event for the event identified by event-key"
+;  [event-key event-fn & event-args]
+;  (EventManager/listen event-key event-fn event-args true false))
+;
+;(defn listen-with-params
+;  "Registers a event for the event identified by event-key, arguments can by
+;  given to configure if the listener should be thread local and if it is to be
+;  deleted after listener have been executed"
+;  [event-key thread-local delete-after-run event-fn & event-args]
+;  (EventManager/listen event-key event-fn event-args thread-local delete-after-run))
+;
+;(defn notify
+;  "Notifies the events identified by the event-key keyword, and gives each
+;  event accesses to data given as context"
+;  ([event-key] (EventManager/notify event-key nil))
+;  ([event-key context] (EventManager/notify event-key context)))
+;
+;(defn dismiss
+;  "Dismisses an event identified by the combination of event-key and event-fn, "
+;  [event-key event-fn dismiss-from]
+;  (EventManager/dismiss event-key event-fn dismiss-from))
+;
+;(defn context
+;  "Returns the context for both types of events, returns nil if no context exists"
+;  []
+;  (EventManager/getContext))
 
 ;;; Transactional Control
 (defn retry
