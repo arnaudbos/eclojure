@@ -203,7 +203,7 @@ public class IOLockingTransaction extends LockingTransaction {
 
     static public Object runInTransaction(Callable fn) throws Exception{
         LockingTransaction t = transaction.get();
-        Object ret;
+        Object ret = null;
         if(t == null) {
             transaction.set(t = new IOLockingTransaction());
             try {
@@ -598,6 +598,35 @@ public class IOLockingTransaction extends LockingTransaction {
                     pushRefs();
 
                     Object ret = fn.invoke();
+
+
+// TODO
+//                    boolean done = false;
+//                    for (int i = 0; !done && i < RETRY_LIMIT; i++){
+//                        System.out.println("i=" + i);
+//                        ((IOLockingTransaction) t).pushRefs();
+//                        try {
+//                            System.out.println("fn=" + fn);
+//                            ret = fn.call();
+//                            ((IOLockingTransaction) t).mergeRefs();
+//                            done = true;
+//                        } catch (RetryEx e) {
+//                            System.out.println("e=" + e);
+//                            ((IOLockingTransaction) t).popRefs();
+//                        } catch (Exception e) {
+//                            ((IOLockingTransaction) t).popRefs();
+//                            throw e;
+//                        }
+//                    }
+//                    if(!done)
+//                        System.out.println("I blew up first!");
+//                    throw Util.runtimeException("Nested transaction failed after reaching retry limit");
+
+
+
+
+
+
 
 //                    HashMap<Keyword, ArrayList<EventFn>> altEventListeners = eventListeners.pop();
 //                    eventListeners.peek().putAll(altEventListeners);
