@@ -6,8 +6,8 @@
 ;; Just a utility for multi-threaded printing
 (defn println [& args]
   (locking *out*
-    (apply clojure.core/println args)
-    ))
+    (apply clojure.core/println args)))
+
 
 ;; Opening hours
 (def open (atom true))
