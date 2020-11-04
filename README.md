@@ -23,7 +23,7 @@ STM transactions compared to Clojure's version.
 In order to provide the extensions to Clojure's STM contributed in eClojure to Clojure projects
 on an opt-in basis, I have repackaged it into this library, rather than a language fork.
 
-<img src="/images/hat.svg" align="right" height="120" />
+<img src="/docs/images/hat.svg" align="right" height="120" />
 
 ## Original work
 
@@ -270,7 +270,7 @@ gotchas you need to be aware of.
 
 ### Transaction control
 
-<img src="/images/tap-to-retry.gif" align="right" height="195" />
+<img src="/docs/images/tap-to-retry.gif" align="right" height="195" />
 
 #### Thread synchronization using `retry`
 
@@ -508,7 +508,7 @@ account's balance were to be updated by different amounts but not enough to
 fulfill the withdraw requested.  
 N. B. `(io/retry-all [acc] #(>= (:amount @acc) amount 0))` would work too.
 
-<img src="/images/time-travel-stuff.gif" align="right" height="220" />
+<img src="/docs/images/time-travel-stuff.gif" align="right" height="220" />
 
 #### Choosing/composing alternatives with `or-else`
 
@@ -516,7 +516,7 @@ N. B. `(io/retry-all [acc] #(>= (:amount @acc) amount 0))` would work too.
 **TODO** Explain how to provide alternative paths with `or-else`.  
 **TODO** Explain how to explicitly `terminate` (see [definition](#definitions)).
 
-<img src="/images/rainbow-unicorn.gif" align="right" height="300" />
+<img src="/docs/images/rainbow-unicorn.gif" align="right" height="300" />
 
 ### Gotchas
 
