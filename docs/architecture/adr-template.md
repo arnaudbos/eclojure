@@ -1,7 +1,15 @@
 # ADR {ADR-NUMBER}: {TITLE}
 
-## Changelog
-* {date}: {changelog}
+## Status
+
+> A decision may be "proposed" if it hasn't been agreed upon yet, "refused" if
+> no agreement has been reached for whatever reason (stating this reason may be
+> beneficial) or "accepted" once it is agreed upon. If a later ADR changes or
+> reverses a decision, it may be marked as "deprecated" or "superseded" with
+> a reference to its replacement.  
+> Only one dated bullet per status.
+
+* {date}: {Proposed|Accepted|Refused|Superseded}
 
 ## Context
 
@@ -25,7 +33,7 @@
 > once it is agreed upon. If a later ADR changes or reverses a decision, it may
 > be marked as "deprecated" or "superseded" with a reference to its replacement.
 
-{Deprecated|Proposed|Accepted}
+{Deprecated|Proposed|Accepted|Refused}
 
 ## Consequences
 

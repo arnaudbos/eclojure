@@ -7,4 +7,4 @@ specifications for Clojure's built-in STM as well as stm.io's extensions:
   MVCC STM
 - [stm.io](./stm.io) - Basically a Twilight STM (side-effects) as per Bieniusa
   et al., along with transaction control (Haskell's retry, orElse) as per
-  Harris et al. on top of Clojure's STM
+  Harris et al., both on top of Clojure's STM
