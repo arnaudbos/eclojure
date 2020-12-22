@@ -13,3 +13,5 @@ pom.xml.asc
 .hg/
 log/
 overhead/results
+states/
+*.out
